@@ -1,151 +1,228 @@
 # Predictive Maintenance Analytics Platform
 
-Training exercise for **AeroFleet Ops**: NASA C-MAPSS turbofan data → Databricks medallion tables → RUL model → maintenance planner queue.
+A Databricks-based predictive maintenance solution for turbofan engine health monitoring and maintenance planning. The platform ingests NASA C-MAPSS data, transforms it through a medallion architecture, trains a Remaining Useful Life (RUL) regression model, and produces a maintenance prioritization queue for operational decision-making.
 
-[![CI](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml)
+## Overview
 
-## Project flow (read this first)
+This repository demonstrates a complete end-to-end analytics workflow for predictive maintenance:
 
+- ingest raw engine sensor data from NASA C-MAPSS files
+- build a bronze layer with schema validation and raw persistence
+- create a silver layer with engineered lifecycle features and quality checks
+- generate gold features for model training and inference
+- train and register an ML model with MLflow
+- score the latest cycle for each engine and prioritize maintenance actions
+
+The project is designed to run on Databricks using Unity Catalog, job orchestration, and a modular Python pipeline. It follows a clean medallion pattern and separates configuration, transforms, and model logic into maintainable components.
+
+---
+
+## End-to-End Project Flow
+
+```mermaid
+flowchart TD
+    A[Source Data<br/>NASA C-MAPSS Files<br/>train / test / rul] --> B[Landing Zone<br/>Unity Catalog Volume]
+    B --> C[Bronze Layer<br/>bronze_train<br/>bronze_test<br/>bronze_rul]
+    C --> D[Silver Layer<br/>silver_cycles<br/>RUL clipping + regime logic + quality checks]
+    D --> E[Gold Layer<br/>gold_features<br/>gold_sensor_selection]
+    E --> F[Model Training<br/>LinearRegression<br/>MLflow + UC Model Registry]
+    F --> G[Model Artifact<br/>pm_dev.cmapss.rul_regressor<br/>champion alias]
+    G --> H[Inference / Scoring<br/>score last cycle of each test engine]
+    H --> I[Predictions<br/>gold_predictions]
+    I --> J[Maintenance Planner<br/>gold_maintenance_queue]
+    J --> K[Operational Action<br/>inspect_now / plan_soon / ok]
+
+    D --> L[Quality Controls<br/>regime_id, sensor filtering, null handling]
+    E --> M[Feature Engineering<br/>rolling means, regime-normalized features]
+    F --> N[Model Validation<br/>RMSE monitoring + registry versioning]
+    H --> O[Business Decision Support<br/>maintenance prioritization]
 ```
-NASA txt files
-      │  upload to Unity Catalog Volume
-      ▼
- BRONZE   bronze_train, bronze_test, bronze_rul     (raw, typed only)
-      │  RUL labels + regime_id + quality checks
-      ▼
- SILVER   silver_cycles
-      │  drop constant sensors, regime-normalize, rolling means
-      ▼
- GOLD     gold_features, gold_sensor_selection
-      │  LinearRegression + MLflow + UC Model Registry
-      ▼
- ML       model: pm_dev.cmapss.rul_regressor @ champion
-      │  score last cycle of each test engine
-      ▼
- OUTPUT   gold_predictions, gold_maintenance_queue
+
+## Business Context
+
+The solution is built for an operations team managing turbine or engine assets where failures are expensive and unplanned downtime creates significant cost and risk. The goal is to transition from reactive maintenance to proactive, condition-based intervention by forecasting when assets are likely to fail.
+
+The model predicts Remaining Useful Life (RUL), and the results are converted into an operational queue that classifies assets into maintenance priority bands.
+
+---
+
+## Solution Architecture
+
+### Data pipeline layers
+
+1. Bronze layer
+   - raw ingestion from NASA text files
+   - typed and minimally processed tables
+   - preserves source data for traceability
+
+2. Silver layer
+   - engineered lifecycle features
+   - RUL clipping and cycle-level preparation
+   - regime-aware transformations and quality assertions
+
+3. Gold layer
+   - curated modeling features
+   - sensor selection and dimensional reduction
+   - ready for training and scoring
+
+4. ML layer
+   - model training with scikit-learn
+   - MLflow experiment tracking
+   - Unity Catalog model registration
+
+5. Operations layer
+   - batch scoring for latest test-cycle predictions
+   - maintenance planner queue for downstream action
+
+---
+
+## Repository Structure
+
+```text
+.
+├── databricks.yml                 # Databricks bundle configuration
+├── pyproject.toml                 # Python project metadata and tooling
+├── requirements.txt               # Runtime dependencies
+├── requirements-dev.txt           # Dev dependencies, linting, testing
+├── README.md                      # Project documentation
+├── CHANGELOG.md                   # Change history
+├── data/
+│   ├── README.md                  # Data placement guidance
+│   └── raw/                      # Local NASA data copy (not committed in practice)
+├── docs/
+│   ├── PROJECT_FLOW.md            # Short project flow summary
+│   ├── assumptions.md             # BRD assumptions and design decisions
+│   └── findings.md                # Final stakeholder findings
+├── notebooks/
+│   ├── 00_setup.py                # Setup guidance
+│   ├── 01_profile.py              # Data profiling and QA checks
+│   ├── 02_planner_queue.py        # Maintenance queue SQL and output review
+│   ├── 03_silver_checks.py        # Silver validation checks
+│   ├── 04_gold_sensors.py          # Gold feature and sensor validation
+│   └── 05_mlflow_review.py        # MLflow review and experiment inspection
+├── resources/
+│   ├── jobs.yml                   # Job definitions for ingestion, transform, train, score
+│   └── pipelines.yml              # Pipeline configuration
+├── sql/
+│   └── planner_queue.sql          # Planner queue query logic
+├── src/
+│   ├── __init__.py
+│   ├── columns.py                 # Sensor metadata and configuration
+│   ├── path_setup.py              # Path setup helpers
+│   ├── settings.py                # Project-wide configuration
+│   ├── spark_utils.py             # Spark utilities
+│   ├── ingestion/
+│   │   ├── __init__.py
+│   │   ├── load_bronze.py         # Bronze ingestion logic
+│   │   └── parse.py               # NASA file parsing
+│   ├── ml/
+│   │   ├── __init__.py
+│   │   ├── train.py               # Training and model registration
+│   │   └── score.py               # Batch scoring and queue generation
+│   ├── transforms/
+│   │   ├── __init__.py
+│   │   ├── build_gold.py          # Gold feature construction
+│   │   ├── build_silver.py        # Silver transform logic
+│   │   ├── features.py            # Feature engineering utilities
+│   │   ├── quality.py             # Validation and quality rules
+│   │   └── rul.py                 # RUL calculation logic
+│   └── ...
+├── tests/
+│   ├── test_features.py           # Feature engineering tests
+│   ├── test_rul.py                # RUL calculation tests
+│   └── test_settings.py           # Settings validation tests
+└── .github/                       # CI/CD workflows and templates
 ```
 
-Jobs (Databricks Asset Bundle):
+---
+
+## Key project jobs and artifacts
+
+The Databricks Asset Bundle defines the operational workflow:
 
 1. `pm-ingest-bronze`
+   - loads raw NASA files into the bronze layer
+
 2. `pm-transform-silver-gold`
+   - builds silver and gold data products
+
 3. `pm-train-model`
+   - trains the RUL regressor and registers a champion model
+
 4. `pm-batch-score`
-5. `pm-end-to-end` (all of the above, in order)
+   - scores the latest cycle for each asset and generates maintenance actions
 
-Catalogs: **dev** = `pm_dev`, **prod** = `pm_prod`. Same code. Names come from `databricks.yml`, not from notebooks.
+5. `pm-end-to-end`
+   - orchestrates the full pipeline end to end
 
----
+### Expected tables
 
-## What you do, in order (5 days)
+| Table | Layer | Purpose |
+| --- | --- | --- |
+| `bronze_train` | Bronze | raw training engine data |
+| `bronze_test` | Bronze | raw test engine data |
+| `bronze_rul` | Bronze | raw RUL reference data |
+| `silver_cycles` | Silver | cleaned and normalized operational cycles |
+| `gold_features` | Gold | modeling-ready feature dataset |
+| `gold_sensor_selection` | Gold | selected sensors used by the model |
+| `gold_predictions` | ML output | predicted RUL per engine cycle |
+| `gold_maintenance_queue` | Planner | maintenance prioritization output |
 
-Do **not** start with GitHub Actions. Get Bronze working on FD001 first (guardrails Phase 1).
+Registered model:
 
-### Day 1 — laptop + Databricks + Bronze (FD001 only)
-
-1. Create a GitHub repo (empty). Clone it, copy **this whole folder** into it.
-2. Install Python 3.11 locally. In this folder:
-
-   ```text
-   python -m venv .venv
-   .venv\Scripts\activate
-   pip install -r requirements-dev.txt
-   pytest tests/ -v
-   ```
-
-3. In Databricks, create (or ask an admin for) catalog `pm_dev` and a cluster on **ML runtime 15.4**.
-4. Edit **only** `databricks.yml`:
-   - `targets.dev.workspace.host` = your workspace URL
-   - `node_type_id` = your cloud’s small VM (`i3.xlarge` on AWS, `Standard_DS3_v2` on Azure)
-5. Install [Databricks CLI](https://docs.databricks.com/dev-tools/cli/databricks-cli.html), run `databricks auth login`, then:
-
-   ```text
-   databricks bundle validate -t dev
-   databricks bundle deploy -t dev
-   ```
-
-6. Put NASA files on the Volume (see `data/README.md`). Start with:
-
-   - `train_FD001.txt`
-   - `test_FD001.txt`
-   - `RUL_FD001.txt`
-
-   Paths:
-
-   ```text
-   /Volumes/pm_dev/cmapss/landing/train/train_FD001.txt
-   /Volumes/pm_dev/cmapss/landing/test/test_FD001.txt
-   /Volumes/pm_dev/cmapss/landing/rul/RUL_FD001.txt
-   ```
-
-7. Run job **pm-ingest-bronze**. Confirm row counts in notebook `notebooks/01_profile.py`.
-
-### Day 2 — Silver (C1, C2, C3)
-
-8. Run job **pm-transform-silver-gold** (or only the silver task if you run tasks by hand).
-9. Read `docs/assumptions.md`. Open `notebooks/03_silver_checks.py`.
-10. Check: train `rul` is 0 on the last cycle of each engine; test `rul` is null.
-
-### Day 3 — Gold + GitHub habits
-
-11. Confirm `gold_sensor_selection` and `notebooks/04_gold_sensors.py`.
-12. Create branch `feature/bronze-ingestion` (later: one branch per change). Open a PR using `.github/pull_request_template.md`.
-13. Protect `main` (PR required). Never put tokens in git.
-
-### Day 4 — Train + CI
-
-14. Run **pm-train-model**. Open MLflow experiment `/Shared/pm-rul-pm_dev`. Copy validation RMSE into `docs/findings.md`.
-15. Add GitHub secrets: `DATABRICKS_HOST`, `DATABRICKS_TOKEN`. CI on every PR: ruff, pytest, `databricks bundle validate -t dev`.
-
-### Day 5 — Score, register, prod gate
-
-16. Run **pm-batch-score**. Open `notebooks/02_planner_queue.py`. Finish `docs/findings.md`.
-17. Add GitHub Environment named **production** (this is the approval click). Secrets: `DATABRICKS_PROD_HOST`, `DATABRICKS_PROD_TOKEN`. Merge to `main` deploys **dev**. Prod job waits for approval.
-18. Optional: copy FD002–FD004 into the same three landing folders, set `ingest_mode: autoloader` in `databricks.yml`, re-run ingest.
+- `pm_dev.cmapss.rul_regressor`
+- alias: `champion`
 
 ---
 
-## Where each file lives
+## Data and modeling approach
 
-| Path | Why it is there |
+### Data sources
+
+The project uses NASA C-MAPSS turbofan engine data, which includes multiple operating conditions and fault modes. The dataset is split into:
+
+- train data
+- test data
+- RUL target reference
+
+### Engineering challenge handling
+
+This solution explicitly addresses common BRD and data-quality issues:
+
+| Challenge | Implementation |
 | --- | --- |
-| `databricks.yml` | Bundle: hosts, catalog, Volume paths, `dev` / `prod` |
-| `resources/jobs.yml` | The four jobs + end-to-end job |
-| `resources/pipelines.yml` | Empty on purpose (no DLT; data is small) |
-| `src/settings.py` | Catalog, schema, clip=125 — **one place** |
-| `src/columns.py` | 3 settings + 21 sensor names |
-| `src/ingestion/parse.py` | Split space-separated NASA lines |
-| `src/ingestion/load_bronze.py` | **Put NASA files → Bronze tables** |
-| `src/transforms/rul.py` | RUL math (unit-tested, no Spark) |
-| `src/transforms/features.py` | Drop constant sensors + regime key |
-| `src/transforms/quality.py` | Silver assertions |
-| `src/transforms/build_silver.py` | **Bronze → silver_cycles** |
-| `src/transforms/build_gold.py` | **Silver → gold_features** |
-| `src/ml/train.py` | **Fit model, MLflow, register champion** |
-| `src/ml/score.py` | **Batch score + planner queue** |
-| `tests/` | pytest for RUL and sensor drop |
-| `notebooks/` | Profile + planner SQL only (no hardcoded catalogs) |
-| `sql/planner_queue.sql` | Same planner query for a SQL warehouse |
-| `docs/assumptions.md` | BRD in our words |
-| `docs/findings.md` | 1-page stakeholder note |
-| `.github/workflows/ci.yml` | PR: lint, test, bundle validate |
-| `.github/workflows/deploy.yml` | `main` → dev; prod needs approval |
-| `data/raw/` | Local copy of NASA files (not committed) |
-
-Do **not** put catalog names or Volume paths inside `src/` functions. Pass `--catalog` from the job (already wired in `jobs.yml`).
+| Hidden regimes | `regime_id` + regime-based normalization |
+| Missing RUL in training data | last cycle treated as failure event; RUL clipped to 125 |
+| Right-censored test data | no direct cycle target in model input; RUL computed at scoring time |
+| Noisy sensors | drop near-zero variance features |
+| Small dataset | single-node job architecture with lightweight ML tooling |
+| Governance | Unity Catalog, schema controls, and environment separation |
+| Model lifecycle | MLflow tracking and UC model registration |
 
 ---
 
-## Local commands (no Spark)
+## Local Development Setup
 
-```text
-ruff check src/ tests/
+### Prerequisites
+
+- Python 3.11+
+- Databricks workspace access
+- Databricks CLI configured for the target environment
+- Access to Unity Catalog catalog and volume for the project
+
+### Local commands
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements-dev.txt
 pytest tests/ -v
+ruff check src/ tests/
 ```
 
-## Databricks commands
+### Databricks commands
 
-```text
+```bash
 databricks bundle validate -t dev
 databricks bundle deploy -t dev
 databricks bundle run pm_ingest -t dev
@@ -154,47 +231,59 @@ databricks bundle run pm_train -t dev
 databricks bundle run pm_score -t dev
 ```
 
-Or one go: `databricks bundle run pm_e2e -t dev`
+Or run the full end-to-end pipeline:
+
+```bash
+databricks bundle run pm_e2e -t dev
+```
 
 ---
 
-## Tables you should see in `pm_dev.cmapss`
+## Environment and Configuration
 
-| Table | Layer |
-| --- | --- |
-| `bronze_train` | Bronze |
-| `bronze_test` | Bronze |
-| `bronze_rul` | Bronze |
-| `silver_cycles` | Silver |
-| `gold_features` | Gold |
-| `gold_sensor_selection` | Gold |
-| `gold_predictions` | ML output |
-| `gold_maintenance_queue` | Planner |
+The project uses environment-based configuration for dev and prod targets:
 
-Registered model: `pm_dev.cmapss.rul_regressor` alias `champion`.
+- `dev` target: `pm_dev`
+- `prod` target: `pm_prod`
+
+Configuration is centralized to avoid hardcoded catalog references in notebook or source logic. Values are driven by `databricks.yml` and project settings rather than scattered across the codebase.
 
 ---
 
-## How we handled BRD challenges
+## Security and Governance
 
-| ID | Approach in this repo |
-| --- | --- |
-| C1 Hidden regimes | `regime_id` + subtract train regime mean |
-| C2 No RUL in raw train | Last cycle = failure; clip 125 |
-| C3 Right-censored test | No `time_in_cycles` in the model; true RUL only at score time |
-| C4 Noisy sensors | Drop near-zero stddev on train |
-| C5 Small data | Single-node job cluster; pandas + sklearn for ML |
-| C6 Incremental FD00x | Same folders; `ingest_mode=autoloader` when you are ready |
-| C7 Governance | UC catalog/schema, Volume, column comments |
-| C8 Model lifecycle | MLflow + registry + RMSE gate + batch score job |
+This project follows responsible data and ML governance practices:
+
+- use Unity Catalog namespaces for data isolation
+- keep secrets out of source control
+- use environment variables or GitHub Actions secrets for deployment credentials
+- keep model registration and training in controlled Databricks environments
+- validate quality checks before publishing operational outputs
+
+### Required GitHub secrets
+
+- `DATABRICKS_HOST`
+- `DATABRICKS_TOKEN`
+- production equivalents for approval-based deployment
 
 ---
 
-## Secrets (never in git)
+## Operational Value
 
-| Place | What |
-| --- | --- |
-| GitHub Actions | `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, prod pair |
-| Databricks | none needed for this NASA dump |
+The resulting outputs support maintenance planning by surfacing which assets are trending toward failure and should be prioritized for inspection or intervention. The final queue classifies each asset into one of several operational states, enabling better resource allocation and reducing unplanned downtime.
 
-Rotate the token when the exercise ends.
+---
+
+## Notes for contributors
+
+- keep transformations modular and testable
+- do not hardcode catalog names inside source modules
+- prefer configuration-driven job definitions
+- validate code with both unit tests and bundle validation before deployment
+- treat model changes as operational decisions, not just code changes
+
+---
+
+## Summary
+
+This repository combines data engineering, machine learning, and operational analytics into a single maintainable predictive maintenance platform. It delivers an end-to-end path from raw NASA sensor data to a model-backed maintenance recommendation queue, providing a practical real-world example of modern industrial analytics on Databricks.
