@@ -1,0 +1,180 @@
+resources:
+  jobs:
+    pm_ingest:
+      name: pm-ingest-bronze
+      job_clusters:
+        - job_cluster_key: small
+          new_cluster:
+            spark_version: 15.4.x-cpu-ml-scala2.12
+            node_type_id: ${var.node_type_id}
+            num_workers: 0
+            spark_conf:
+              spark.master: local[*]
+              spark.databricks.cluster.profile: singleNode
+            spark_env_vars:
+              PYTHONPATH: ${workspace.file_path}/src
+            custom_tags:
+              ResourceClass: SingleNode
+      tasks:
+        - task_key: bronze
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/ingestion/load_bronze.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+              - --landing-path=${var.landing_path}
+              - --checkpoint-path=${var.checkpoint_path}
+              - --mode=${var.ingest_mode}
+
+    pm_transform:
+      name: pm-transform-silver-gold
+      job_clusters:
+        - job_cluster_key: small
+          new_cluster:
+            spark_version: 15.4.x-cpu-ml-scala2.12
+            node_type_id: ${var.node_type_id}
+            num_workers: 0
+            spark_conf:
+              spark.master: local[*]
+              spark.databricks.cluster.profile: singleNode
+            spark_env_vars:
+              PYTHONPATH: ${workspace.file_path}/src
+            custom_tags:
+              ResourceClass: SingleNode
+      tasks:
+        - task_key: silver
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/transforms/build_silver.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+              - --rul-clip=125
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/transforms/build_gold.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+
+    pm_train:
+      name: pm-train-model
+      job_clusters:
+        - job_cluster_key: small
+          new_cluster:
+            spark_version: 15.4.x-cpu-ml-scala2.12
+            node_type_id: ${var.node_type_id}
+            num_workers: 0
+            spark_conf:
+              spark.master: local[*]
+              spark.databricks.cluster.profile: singleNode
+            spark_env_vars:
+              PYTHONPATH: ${workspace.file_path}/src
+            custom_tags:
+              ResourceClass: SingleNode
+      tasks:
+        - task_key: train
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/ml/train.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+              - --model-name=rul_regressor
+              - --rul-clip=125
+
+    pm_score:
+      name: pm-batch-score
+      job_clusters:
+        - job_cluster_key: small
+          new_cluster:
+            spark_version: 15.4.x-cpu-ml-scala2.12
+            node_type_id: ${var.node_type_id}
+            num_workers: 0
+            spark_conf:
+              spark.master: local[*]
+              spark.databricks.cluster.profile: singleNode
+            spark_env_vars:
+              PYTHONPATH: ${workspace.file_path}/src
+            custom_tags:
+              ResourceClass: SingleNode
+      tasks:
+        - task_key: score
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/ml/score.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+              - --model-name=rul_regressor
+
+    pm_e2e:
+      name: pm-end-to-end
+      job_clusters:
+        - job_cluster_key: small
+          new_cluster:
+            spark_version: 15.4.x-cpu-ml-scala2.12
+            node_type_id: ${var.node_type_id}
+            num_workers: 0
+            spark_conf:
+              spark.master: local[*]
+              spark.databricks.cluster.profile: singleNode
+            spark_env_vars:
+              PYTHONPATH: ${workspace.file_path}/src
+            custom_tags:
+              ResourceClass: SingleNode
+      tasks:
+        - task_key: bronze
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/ingestion/load_bronze.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+              - --landing-path=${var.landing_path}
+              - --checkpoint-path=${var.checkpoint_path}
+              - --mode=${var.ingest_mode}
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/transforms/build_silver.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+              - --rul-clip=125
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/transforms/build_gold.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+        - task_key: train
+          depends_on:
+            - task_key: gold
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/ml/train.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+              - --model-name=rul_regressor
+              - --rul-clip=125
+        - task_key: score
+          depends_on:
+            - task_key: train
+          job_cluster_key: small
+          spark_python_task:
+            python_file: src/ml/score.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${var.schema}
+              - --model-name=rul_regressor

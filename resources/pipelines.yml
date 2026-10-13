@@ -1,0 +1,4 @@
+# No Lakeflow / DLT pipeline in this exercise.
+# CMAPSS is a small batch dataset (BRD challenge C5). Jobs in jobs.yml
+# run Bronze -> Silver -> Gold -> train -> score instead.
+resources: {}

@@ -1,0 +1,94 @@
+================================================================================
+DATABRICKS FOLDER STRUCTURE (after: databricks bundle deploy -t dev)
+================================================================================
+
+1) WORKSPACE  (Repos / Workspace files — your code)
+
+/Workspace/Users/<your-email>/.bundle/predictive-maintenance/dev/files/
+├── databricks.yml
+├── src/
+│   ├── settings.py
+│   ├── columns.py
+│   ├── path_setup.py
+│   ├── spark_utils.py
+│   ├── ingestion/
+│   │   ├── load_bronze.py
+│   │   └── parse.py
+│   ├── transforms/
+│   │   ├── build_silver.py
+│   │   ├── build_gold.py
+│   │   ├── rul.py
+│   │   ├── features.py
+│   │   └── quality.py
+│   └── ml/
+│       ├── train.py
+│       └── score.py
+└── notebooks/
+    ├── 00_setup.py
+    ├── 01_profile.py
+    ├── 02_planner_queue.py
+    ├── 03_silver_checks.py
+    ├── 04_gold_sensors.py
+    └── 05_mlflow_review.py
+
+Jobs (Workflows UI, not folders):
+  pm-ingest-bronze
+  pm-transform-silver-gold
+  pm-train-model
+  pm-batch-score
+  pm-end-to-end
+
+
+2) UNITY CATALOG  (data — this is where NASA files and tables live)
+
+pm_dev/                          catalog
+└── cmapss/                      schema
+    ├── Volumes
+    │   ├── landing/             PUT NASA FILES HERE
+    │   │   ├── train/
+    │   │   │   └── train_FD001.txt     (later: train_FD002.txt ...)
+    │   │   ├── test/
+    │   │   │   └── test_FD001.txt
+    │   │   └── rul/
+    │   │       └── RUL_FD001.txt
+    │   └── checkpoints/         Auto Loader only (leave empty on day 1)
+    ├── Tables
+    │   ├── bronze_train
+    │   ├── bronze_test
+    │   ├── bronze_rul
+    │   ├── silver_cycles
+    │   ├── gold_features
+    │   ├── gold_sensor_selection
+    │   ├── gold_predictions
+    │   └── gold_maintenance_queue
+    └── Models
+        └── rul_regressor        alias: champion
+
+Same tree under catalog pm_prod after you deploy -t prod.
+
+
+3) GITHUB REPO  (same as this zip — not inside Databricks)
+
+predictive-maintenance/
+├── databricks.yml
+├── resources/
+│   ├── jobs.yml
+│   └── pipelines.yml
+├── src/            (ingestion, transforms, ml)
+├── notebooks/
+├── tests/
+├── sql/
+├── docs/
+├── data/raw/       (optional laptop copy; do not commit NASA txt)
+├── .github/workflows/
+├── README.md
+└── DATABRICKS_FOLDER_STRUCTURE.txt
+
+
+4) WHERE YOU CLICK IN THE UI
+
+  Workspace  → Users → you → .bundle → predictive-maintenance → notebooks
+  Catalog    → pm_dev → cmapss → Volumes → landing   (upload txt here)
+  Catalog    → pm_dev → cmapss                         (tables)
+  Workflows  → Jobs                                    (run ingest / e2e)
+  Experiments→ /Shared/pm-rul-pm_dev                   (MLflow)

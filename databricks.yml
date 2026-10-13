@@ -1,0 +1,56 @@
+bundle:
+  name: predictive-maintenance
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog (dev vs prod)
+    default: pm_dev
+  schema:
+    description: Schema for all CMAPSS tables
+    default: cmapss
+  landing_path:
+    description: Volume folder that holds the NASA txt files
+    default: /Volumes/pm_dev/cmapss/landing
+  checkpoint_path:
+    description: Auto Loader checkpoints
+    default: /Volumes/pm_dev/cmapss/checkpoints
+  node_type_id:
+    description: Single-node VM. AWS i3.xlarge. Azure Standard_DS3_v2.
+    default: i3.xlarge
+  ingest_mode:
+    description: batch (day 1) or autoloader (incremental FD002+ drops)
+    default: batch
+  service_principal_name:
+    description: Prod job identity. Leave empty in dev.
+    default: ""
+
+sync:
+  include:
+    - src/**
+    - notebooks/**
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://YOUR-DEV-WORKSPACE.cloud.databricks.com
+    variables:
+      catalog: pm_dev
+      landing_path: /Volumes/pm_dev/cmapss/landing
+      checkpoint_path: /Volumes/pm_dev/cmapss/checkpoints
+
+  prod:
+    mode: production
+    workspace:
+      host: https://YOUR-PROD-WORKSPACE.cloud.databricks.com
+    variables:
+      catalog: pm_prod
+      landing_path: /Volumes/pm_prod/cmapss/landing
+      checkpoint_path: /Volumes/pm_prod/cmapss/checkpoints
+    # After you have a service principal, uncomment:
+    # run_as:
+    #   service_principal_name: ${var.service_principal_name}
